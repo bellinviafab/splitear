@@ -102,9 +102,9 @@ Splitear/
 
 ## Modelo de datos (DER)
 
-![DER](image.png)
+![DER](docs/image.png)
 
-![DER BD](<DER splitear.png>)
+![DER BD](<docs/DER splitear.png>)
 
 - **USER:** persona registrada. `username` e `email` son únicos. La contraseña se guarda hasheada con su `salt`.
 - **GRUPO:** conjunto de personas que comparten gastos. `creadorId` es el administrador.
@@ -116,7 +116,7 @@ Splitear/
 
 ## Flujo de pantallas (frontend)
 
-![alt text](image-1.png)
+![alt text](docs/image-1.png)
 
 Desde cualquier pantalla principal, la barra inferior lleva a Grupos (`/inicio`), Actividad y Perfil.
 
