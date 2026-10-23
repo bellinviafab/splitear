@@ -4,8 +4,8 @@ App web con diseño mobile-first para dividir gastos entre amigos: cargás los g
 
 Fue originalmente pensado como una posible feautre para billeteras virtuales como MODO o Mercado Pago. Que el cálculo de quién le debe a quién termine en transferencias directas entre los integrantes del grupo y no tener que salir del ecosistema de la aplicación. 
 
-<!-- TODO demo: GIF o video de 30-60 s con el flujo principal (crear grupo → cargar gasto → saldar cuentas).
-![Demo](docs/demo.gif) -->
+
+![Demo](docs/demo.gif) 
 
 ## Índice
 
