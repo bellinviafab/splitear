@@ -2,7 +2,7 @@
 
 App web con diseño mobile-first para dividir gastos entre amigos: cargás los gastos de un grupo y la app calcula quién le debe a quién y propone los pagos para dejar todo en cero.
 
-Fue originalmente pensado como una posible feautre para billeteras virtuales como MODO o Mercado Pago. Que el cálculo de quién le debe a quién termine en transferencias directas entre los integrantes del grupo y no tener que salir del ecosistema de la aplicación. 
+Fue originalmente pensado como una posible feature para billeteras virtuales como MODO o Mercado Pago. Que el cálculo de quién le debe a quién termine en transferencias directas entre los integrantes del grupo y no tener que salir del ecosistema de la aplicación. 
 
 
 ![Demo](docs/demo.gif) 
@@ -102,9 +102,9 @@ Splitear/
 
 ## Modelo de datos (DER)
 
-![alt text](image.png)
+![DER](image.png)
 
-![alt text](<DER splitear.png>)
+![DER BD](<DER splitear.png>)
 
 - **USER:** persona registrada. `username` e `email` son únicos. La contraseña se guarda hasheada con su `salt`.
 - **GRUPO:** conjunto de personas que comparten gastos. `creadorId` es el administrador.
@@ -306,7 +306,7 @@ Son decisiones de alcance que quedaron pendientes a propósito:
 
 ## Autor
 
-**Fabrizio Bellinvia** · [GitHub](https://github.com/bellinviafab) · LinkedIn: <!-- TODO: agregar link -->
+**Fabrizio Bellinvia** · [GitHub](https://github.com/bellinviafab) · [Linkedin](https://www.linkedin.com/in/fabrizio-bellinvia-4a6a871b7/)
 
 ## Licencia
 
