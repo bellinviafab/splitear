@@ -10,10 +10,11 @@ const errorHandler = require('./middlewares/error.middleware.js')
 
 app.use(express.json());
 app.use(cookieParser());
-app.use(cors({
-    origin: ['http://localhost:5173'],
+app.use(cors({          //Politica del mismo origen
+    origin: process.env.FRONTEND_URL,
     credentials: true
 }));
+app.set('trust proxy', 1)
 
 app.use('/auth', authRoutes);
 app.use('/grupos', grupoRoutes);

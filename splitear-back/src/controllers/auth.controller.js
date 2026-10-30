@@ -2,6 +2,7 @@ const User = require('../models/User');
 const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken")
 const { Op } = require("sequelize")
+const isProduction = process.env.NODE_ENV === 'production';
 
 const crearUsuario = async (req, res, next) => {
     try {
@@ -38,7 +39,8 @@ const loginUsuario = async (req, res, next) => {
 
         res.cookie("token", token, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
+            sameSite: isProduction ? 'none' : 'lax',
+            secure: isProduction,
             maxAge: 2 * 60 * 60 * 1000,
         });
         return res.status(200).json({
@@ -64,7 +66,11 @@ function generarToken(payload) {
 }
 
 const logoutUsuario = (req, res) => {
-    res.clearCookie("token");
+    res.clearCookie("token", {
+        httpOnly: true,
+        sameSite: isProduction ? 'none' : 'lax',
+        secure: isProduction
+    });
     return res.sendStatus(204);
 }
 

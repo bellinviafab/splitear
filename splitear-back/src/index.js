@@ -6,15 +6,12 @@ const PORT = process.env.PORT; //Pasar al .env
 require('./models');
 
 
-db.sync({ alter: true }) //Cambiar a false
+db.authenticate()
     .then(() => {
-        app.listen(PORT, () => {
-            console.log(`Servidor escuchando en el puerto ${PORT} y DB conectada`)
-        })
+        console.log('Conexión a PostgreSQL establecida correctamente.');
+        app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
     })
-    .catch((error) => {
-        console.error('El error al sincronizar la bd fue: ', error)
-    })
+    .catch((err) => console.error('Error al conectar a la BD:', err));
 
 
 
