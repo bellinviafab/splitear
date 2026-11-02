@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://splitear.onrender.com" },
+    { "source": "/api/:path*", "destination": "https://splitear.onrender.com/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
