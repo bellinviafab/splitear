@@ -2,10 +2,15 @@
 
 App web con diseño mobile-first para dividir gastos entre amigos: cargás los gastos de un grupo y la app calcula quién le debe a quién y propone los pagos para dejar todo en cero.
 
-Fue originalmente pensado como una posible feature para billeteras virtuales como MODO o Mercado Pago. Que el cálculo de quién le debe a quién termine en transferencias directas entre los integrantes del grupo y no tener que salir del ecosistema de la aplicación. 
+Fue originalmente pensado como una posible feature para billeteras virtuales como MODO o Mercado Pago: que el cálculo de quién le debe a quién termine en transferencias directas entre los integrantes del grupo, sin salir del ecosistema de la aplicación.
 
+**Demo en vivo:** https://splitear.vercel.app
 
-![Demo](docs/demo.gif) 
+> El back corre en el plan gratuito de Render, que se suspende tras 15 minutos sin uso.
+> La primera carga puede tardar cerca de un minuto en responder.
+> Para probarla, creá una cuenta desde la pantalla de registro.
+
+![Demo de Splitear](docs/demo.gif)
 
 ## Índice
 
@@ -14,6 +19,7 @@ Fue originalmente pensado como una posible feature para billeteras virtuales com
 - [Funcionalidades](#funcionalidades)
 - [Stack tecnológico](#stack-tecnológico)
 - [Arquitectura](#arquitectura)
+- [Despliegue](#despliegue)
 - [Modelo de datos (DER)](#modelo-de-datos-der)
 - [Flujo de pantallas (frontend)](#flujo-de-pantallas-frontend)
 - [Documentación de la API](#documentación-de-la-api)
@@ -45,7 +51,7 @@ El backend, el modelo de datos, el algoritmo de liquidación y la lógica de neg
 - Pantalla de inicio con el saldo de cada grupo y el resumen de cuánto te deben y cuánto debés.
 - Detalle de grupo con tres pestañas: gastos, saldos (quién puso de más y qué pagos dejan todo en cero) e integrantes (con botón para copiar el alias).
 - Actividad: los últimos 30 gastos de todos tus grupos, agrupados por día, con el reparto desplegable.
-- Perfil. Se facilita un registro rapido, luego el nombre y apellido se pueden modificar una sola vez. alias es modificable.
+- Perfil: el registro pide solo lo básico. Después se cargan nombre y apellido (una sola vez) y el alias, que se puede modificar cuando quieras.
 - Interfaz pensada para celular (mobile-first).
 - La API también permite eliminar grupos, integrantes y gastos (soft delete), aunque todavía sin pantalla en el front.
 
@@ -58,7 +64,9 @@ El backend, el modelo de datos, el algoritmo de liquidación y la lógica de neg
 | Autenticación | JWT (`jsonwebtoken` 9) en cookie `httpOnly`, contraseñas con `bcrypt` 6 |
 | Frontend | React 19, Vite 8, React Router 7, Axios |
 | Estilos | Tailwind CSS 4 |
+| Migraciones | `sequelize-cli` |
 | Herramientas | nodemon, ESLint 10 |
+| Infraestructura | Vercel (front), Render (back), Supabase (PostgreSQL) |
 
 ## Arquitectura
 
@@ -79,10 +87,13 @@ La razón de separar controllers de services es poder probar y reutilizar la ló
 ```
 Splitear/
 ├── splitear-back/
+│   ├── config/config.js            # Configuración de sequelize-cli (lee las variables de entorno)
+│   ├── migrations/                 # Esquema de la base de datos
+│   ├── .sequelizerc                # Rutas que usa sequelize-cli
 │   ├── docs/
 │   │   └── algoritmo.md            # Diseño del algoritmo de liquidación
 │   └── src/
-│       ├── index.js                # Arranque: carga .env, sincroniza la BD y levanta el servidor
+│       ├── index.js                # Arranque: carga .env, verifica la conexión a la BD y levanta el servidor
 │       ├── app.js                  # Express: JSON, cookies, CORS y montaje de rutas
 │       ├── db.js                   # Conexión de Sequelize a PostgreSQL
 │       ├── routes/                 # auth, usuarios, grupos y gastos
@@ -91,20 +102,58 @@ Splitear/
 │       ├── middlewares/            # auth.middlewares.js y error.middleware.js
 │       └── models/                 # User, Grupo, Pertenencia, Gasto, Detalle_gasto + asociaciones (index.js)
 └── splitear-front/
+    ├── vercel.json                 # Reenvío de /api al back y fallback de la SPA
     └── src/
         ├── main.jsx                # Entrada: AuthProvider y BrowserRouter
         ├── App.jsx                 # Tabla de rutas
         ├── pages/                  # Una por pantalla
         ├── components/             # Encabezado, BarraNav, Logout, RutaProtegida, SoloInvitados
         ├── context/AuthContext.jsx # Sesión del usuario (consulta /auth/me al cargar)
-        └── services/api.js         # Instancia de Axios (baseURL y cookies)
+        └── services/api.js         # Instancia de Axios (baseURL desde VITE_API_URL y cookies)
 ```
+
+## Despliegue
+
+| Capa | Servicio | Detalle |
+|---|---|---|
+| Front | Vercel | React + Vite, compilado en cada push a `main` |
+| Back | Render | Web Service con Node/Express |
+| Base de datos | Supabase | PostgreSQL, conexión por session pooler con SSL |
+
+```mermaid
+flowchart LR
+    N[Navegador] --> V["Vercel<br/>front React"]
+    V -- "/api/* reenviado" --> R["Render<br/>API Node/Express"]
+    R -- "SSL" --> S[("Supabase<br/>PostgreSQL")]
+```
+
+El navegador solo habla con Vercel. Una regla de reenvío en `splitear-front/vercel.json` manda lo que empieza con `/api` al back en Render. Así la cookie `httpOnly` del JWT es del mismo sitio que el front y funciona también en Safari y Firefox, que bloquean cookies entre sitios.
+
+```json
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://splitear.onrender.com/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+```
+
+La primera regla va antes que la segunda, que es el fallback de la SPA para React Router. Las llamadas a la API se hacen sin barra final (`/grupos`, no `/grupos/`), porque Vercel no reenvía esas rutas.
+
+El esquema de la base se crea con migraciones (`sequelize-cli`), no con `sync`.
+
+### Cómo replicarlo
+
+1. **Supabase:** creá un proyecto y copiá la cadena de conexión del *session pooler* (puerto 5432, funciona por IPv4).
+2. **Migraciones:** desde `splitear-back`, con `DATABASE_URL` y `DB_SSL=true` en el entorno de la terminal, corré `npx sequelize-cli db:migrate`. No pongas esa URL en el `.env` local.
+3. **Render:** Web Service con *Root Directory* `splitear-back`, *Build Command* `npm install` y *Start Command* `npm start`. Cargá las variables de entorno de [esta sección](#variables-de-entorno).
+4. **Vercel:** proyecto con *Root Directory* `splitear-front` y la variable `VITE_API_URL=/api`. Después de cambiar una variable hay que volver a desplegar, porque Vite las incorpora al compilar.
 
 ## Modelo de datos (DER)
 
-![DER](docs/image.png)
+![Diagrama entidad-relación](docs/image.png)
 
-![DER BD](<docs/DER splitear.png>)
+![DER generado desde la base de datos](<docs/DER splitear.png>)
 
 - **USER:** persona registrada. `username` e `email` son únicos. La contraseña se guarda hasheada con su `salt`.
 - **GRUPO:** conjunto de personas que comparten gastos. `creadorId` es el administrador.
@@ -116,7 +165,7 @@ Splitear/
 
 ## Flujo de pantallas (frontend)
 
-![alt text](docs/image-1.png)
+![Flujo de pantallas del frontend](docs/image-1.png)
 
 Desde cualquier pantalla principal, la barra inferior lleva a Grupos (`/inicio`), Actividad y Perfil.
 
@@ -140,7 +189,7 @@ Desde cualquier pantalla principal, la barra inferior lleva a Grupos (`/inicio`)
 
 **Convenciones**
 
-- URL base: `http://localhost:3000`. Cuerpo y respuestas en JSON.
+- URL base: `http://localhost:3000` en local. En la demo, el front llama a `/api` y Vercel reenvía al back (ver [Despliegue](#despliegue)). Cuerpo y respuestas en JSON.
 - **Autenticación:** el login deja una cookie `token` (JWT, `httpOnly`, 2 horas de vida). El front envía las cookies con `withCredentials`. Sin cookie válida, las rutas protegidas responden `401` sin cuerpo.
 - **Errores:** JSON con un texto en `message` (algunos endpoints más viejos usan `mensaje` o `error`).
 - **Acceso:** `pública`, `logueado`, `miembro` (pertenece al grupo) o `admin` (creador del grupo).
@@ -206,11 +255,24 @@ Desde cualquier pantalla principal, la barra inferior lleva a Grupos (`/inicio`)
 
 **Soft delete para auditoría.** Grupos, pertenencias, gastos y detalles se marcan como eliminados en lugar de borrarse. El historial se conserva y Sequelize excluye lo eliminado de las sumas de saldos sin código extra. El costo es que las tablas crecen y cualquier consulta SQL directa tiene que filtrar `deletedAt`.
 
-**Autenticación con JWT en cookie `httpOnly`.** El token no es accesible desde JavaScript, lo que reduce el riesgo de robo por XSS. Descarté guardarlo en `localStorage` y mandarlo en un header, que es más simple pero deja el token expuesto a cualquier script de la página. En producción la cookie se marca `secure`.
+**Autenticación con JWT en cookie `httpOnly`.** El token no es accesible desde JavaScript, lo que reduce el riesgo de robo por XSS. Descarté guardarlo en `localStorage` y mandarlo en un header, que es más simple pero deja el token expuesto a cualquier script de la página. En producción la cookie se marca `secure`, y el reenvío de Vercel hace que sea del mismo sitio que el front.
 
 **Administrador sin tabla de roles.** El administrador de un grupo es su creador (`creadorId`). Alcanza para el alcance actual (agregar y quitar integrantes, eliminar el grupo). Una columna de rol en `PERTENENCIA` sería el paso siguiente si hiciera falta más de un administrador.
 
 **Manejo centralizado de errores.** `error.middleware.js` traduce los errores de Sequelize (unicidad a `409`, validación a `400`) y los errores con `statusCode` a respuestas JSON. Los controllers nuevos delegan con `next(error)`. Algunos controllers anteriores todavía responden por su cuenta (ver [Limitaciones](#limitaciones-conocidas)).
+
+**Migraciones en lugar de `sync`.** El esquema vive en `splitear-back/migrations` y se aplica con `sequelize-cli`. `sync({ alter: true })` es cómodo mientras el modelo cambia, pero en producción puede modificar columnas sin avisar. Al arrancar, el servidor solo verifica la conexión (`authenticate`).
+
+**Row Level Security activado en Supabase.** Supabase publica las tablas del esquema `public` por una API REST propia. Como las tablas se crean con SQL, RLS viene desactivado, así que se activa en todas sin crear políticas. La API pública no devuelve nada y el back no se ve afectado, porque se conecta con el rol `postgres`, que ignora RLS:
+
+```sql
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.grupos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pertenencia ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.gastos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.detalle_gastos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."SequelizeMeta" ENABLE ROW LEVEL SECURITY;
+```
 
 **Actividad en dos consultas.** El feed trae los 30 gastos más recientes y, aparte, sus detalles (`separate: true`). Con un solo `JOIN`, el `LIMIT` contaría filas del reparto y no gastos. Cada fila trae el reparto completo, así que el desplegable del front abre sin pedidos extra.
 
@@ -231,13 +293,19 @@ npm install
 
 1. Creá la base de datos. Por ejemplo, con `psql`: `CREATE DATABASE splitear;`
 2. Creá un archivo `.env` en `splitear-back/` con las variables de [esta sección](#variables-de-entorno).
-3. Levantá el servidor:
+3. Creá las tablas con las migraciones:
+
+```bash
+npx sequelize-cli db:migrate
+```
+
+4. Levantá el servidor:
 
 ```bash
 npm run dev
 ```
 
-La primera vez, el servidor crea las tablas automáticamente. Si todo salió bien, la consola muestra `Servidor escuchando en el puerto 3000 y DB conectada`.
+Si todo salió bien, la consola muestra `Conexión a PostgreSQL establecida correctamente.` y `Servidor en puerto 3000`.
 
 ### Frontend
 
@@ -249,21 +317,26 @@ npm install
 npm run dev
 ```
 
-Abrí `http://localhost:5173`. El front llama a `http://localhost:3000`, y el back solo acepta pedidos de `http://localhost:5173`. Ambas URLs están fijas en el código (`splitear-front/src/services/api.js` y `splitear-back/src/app.js`).
+Creá un `.env` en `splitear-front/` con `VITE_API_URL=http://localhost:3000` y abrí `http://localhost:5173`. En local el front llama directo al back, que acepta pedidos del origen definido en `FRONTEND_URL`.
 
 ## Variables de entorno
 
-Archivo `splitear-back/.env` (está en `.gitignore`; nunca subas valores reales).
+Back: `splitear-back/.env`. Front: `splitear-front/.env`, que solo lleva `VITE_API_URL`. Ambos están en `.gitignore`; nunca subas valores reales.
 
-| Variable | Descripción | Ejemplo |
-|----------|-------------|---------|
-| `PORT` | Puerto del servidor. El front espera el 3000. | `3000` |
-| `DB_HOST` | Host de PostgreSQL. | `localhost` |
-| `DB_NAME` | Nombre de la base de datos. | `splitear` |
-| `DB_USER` | Usuario de PostgreSQL. | `postgres` |
-| `DB_PASSWORD` | Contraseña de ese usuario. | `tu_contraseña` |
-| `JWT_SECRET` | Clave para firmar los tokens. Usá una cadena larga y aleatoria. | `generala con el comando de abajo` |
-| `NODE_ENV` | `development` o `production`. En `production` la cookie exige HTTPS. | `development` |
+| Variable | Dónde | Descripción | Local | Producción |
+|----------|-------|-------------|-------|------------|
+| `PORT` | Back | Puerto del servidor | `3000` | lo define Render |
+| `DB_HOST` | Back | Host de PostgreSQL | `localhost` | no se usa |
+| `DB_PORT` | Back | Puerto de PostgreSQL (opcional) | `5432` | no se usa |
+| `DB_NAME` | Back | Nombre de la base | `splitear` | no se usa |
+| `DB_USER` | Back | Usuario de PostgreSQL | `postgres` | no se usa |
+| `DB_PASSWORD` | Back | Contraseña de ese usuario | `tu_contraseña` | no se usa |
+| `DATABASE_URL` | Back | Cadena de conexión completa. Si existe, tiene prioridad sobre las `DB_*` | vacía | URL del session pooler de Supabase |
+| `DB_SSL` | Back | Activa SSL en la conexión | vacía | `true` |
+| `JWT_SECRET` | Back | Clave para firmar los tokens. Usá una cadena larga y aleatoria | generala con el comando de abajo | otra distinta |
+| `NODE_ENV` | Back | En `production` la cookie exige HTTPS | `development` | `production` |
+| `FRONTEND_URL` | Back | Origen permitido por CORS | `http://localhost:5173` | `https://splitear.vercel.app` |
+| `VITE_API_URL` | Front | URL base de la API | `http://localhost:3000` | `/api` |
 
 Para generar un `JWT_SECRET`:
 
@@ -282,17 +355,17 @@ Todavía no hay tests automatizados: `npm test` es el placeholder de npm. Los ca
 
 Son decisiones de alcance que quedaron pendientes a propósito:
 
-- **`sync({ alter: true })` en lugar de migraciones.** Es cómodo mientras el modelo cambia. Para producción hacen falta migraciones.
 - **Liquidación con números de punto flotante.** El reparto es exacto en centavos, pero los saldos se suman como `Number`. El front descarta restos menores a medio centavo. Lo correcto es liquidar también en centavos enteros.
 - **N+1 en algunas consultas.** `POST /gastos` y `POST /grupos` validan participantes de a uno, y `GET /grupos` hace dos consultas por grupo para calcular el saldo.
 - **Invitaciones por mail sin implementar.** Cuando el email no tiene cuenta, la API responde que se envió una invitación, pero `enviarMail` está vacía.
 - **El balance es de solo lectura.** No se registran pagos, así que el saldo no baja cuando alguien paga.
 - **Formato de errores no unificado.** Conviven `message`, `mensaje` y `error`. Falta pasar los controllers anteriores al middleware central.
 - **Validación de entrada mínima en el back.** Reglas como "al menos un participante por gasto" hoy dependen del front.
-- **Seguridad de la cookie.** No define `SameSite` ni hay protección anti-CSRF específica. El token dura 2 horas, sin renovación.
+- **Sesión.** No hay protección anti-CSRF específica. El token dura 2 horas, sin renovación.
 - **Eliminar grupo, integrante o gasto** existe en la API pero no tiene pantalla.
 - **Actividad sin paginación:** muestra los últimos 30 gastos.
-- **Sin tests ni deploy.** URLs de front, back y CORS fijas a `localhost`.
+- **Sin tests automatizados.**
+- **Servicios gratuitos.** El back en Render se suspende tras 15 minutos sin uso y la primera carga tarda cerca de un minuto. El proyecto de Supabase se pausa tras una semana sin actividad.
 
 ## Roadmap
 
@@ -300,13 +373,13 @@ Son decisiones de alcance que quedaron pendientes a propósito:
 - Registrar pagos ("marcar como pagado") e incluirlos en la actividad.
 - Invitaciones reales por email.
 - Tests de reparto y liquidación.
-- Migraciones, URLs por variables de entorno y deploy.
+- Integración continua con GitHub Actions (lint, tests y build).
 - Paginación de la actividad y pantallas para eliminar grupos, integrantes y gastos.
 - Tema oscuro.
 
 ## Autor
 
-**Fabrizio Bellinvia** · [GitHub](https://github.com/bellinviafab) · [Linkedin](https://www.linkedin.com/in/fabrizio-bellinvia-4a6a871b7/)
+**Fabrizio Bellinvia** · [GitHub](https://github.com/bellinviafab) · [LinkedIn](https://www.linkedin.com/in/fabrizio-bellinvia-4a6a871b7/)
 
 ## Licencia
 
