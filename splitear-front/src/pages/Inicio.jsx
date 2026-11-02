@@ -25,7 +25,7 @@ function Inicio() {
 
     useEffect(() => {
         const obtenerGrupos = async () => {
-            const res = await api.get('/grupos/')  //Obtengo la respuesta
+            const res = await api.get('/grupos')  //Obtengo la respuesta
             setGrupos(res.data)   //Actualizar el estado
         }
         obtenerGrupos();
