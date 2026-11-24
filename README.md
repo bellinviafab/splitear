@@ -100,6 +100,7 @@ Splitear/
 │       ├── controllers/            # Capa HTTP
 │       ├── services/               # Lógica de negocio y consultas
 │       ├── middlewares/            # auth.middlewares.js y error.middleware.js
+│       ├── utils/dinero.js         # Reparto y liquidación en centavos (funciones puras, con tests en test/)
 │       └── models/                 # User, Grupo, Pertenencia, Gasto, Detalle_gasto + asociaciones (index.js)
 └── splitear-front/
     ├── vercel.json                 # Reenvío de /api al back y fallback de la SPA
@@ -191,7 +192,7 @@ Desde cualquier pantalla principal, la barra inferior lleva a Grupos (`/inicio`)
 
 - URL base: `http://localhost:3000` en local. En la demo, el front llama a `/api` y Vercel reenvía al back (ver [Despliegue](#despliegue)). Cuerpo y respuestas en JSON.
 - **Autenticación:** el login deja una cookie `token` (JWT, `httpOnly`, 2 horas de vida). El front envía las cookies con `withCredentials`. Sin cookie válida, las rutas protegidas responden `401` sin cuerpo.
-- **Errores:** JSON con un texto en `message` (algunos endpoints más viejos usan `mensaje` o `error`).
+- **Errores:** JSON con un texto en `message`.
 - **Acceso:** `pública`, `logueado`, `miembro` (pertenece al grupo) o `admin` (creador del grupo).
 
 ### Auth
@@ -221,15 +222,15 @@ Desde cualquier pantalla principal, la barra inferior lleva a Grupos (`/inicio`)
 | GET | `/grupos/:id` | miembro | Detalle: `grupo`, `integrantes`, `gastosPorIntegrante` y `gastoTotalGrupo`. |
 | GET | `/grupos/:id/gastos` | miembro | Gastos del grupo, del más nuevo al más viejo, con su creador. |
 | GET | `/grupos/:id/integrantes` | miembro | Integrantes del grupo. |
-| POST | `/grupos/:id/miembros` | admin | Suma un integrante. Body: `{ integrante: { email } }`. |
+| POST | `/grupos/:id/miembros` | admin | Suma un integrante. Body: `{ integrante: { email } }`. Si la persona había sido quitada, se restaura su pertenencia. |
 | DELETE | `/grupos/:id` | admin | Elimina el grupo (soft delete). |
-| DELETE | `/grupos/:id/miembros/:userId` | admin | Quita un integrante. El administrador no puede quitarse a sí mismo. |
+| DELETE | `/grupos/:id/miembros/:userId` | admin | Quita un integrante. El administrador no puede quitarse a sí mismo, y no se puede quitar a nadie con saldo pendiente (`409`). |
 
 ### Gastos
 
 | Método | Ruta | Acceso | Descripción |
 |--------|------|--------|-------------|
-| POST | `/gastos/:id` | miembro | Crea un gasto en el grupo `:id`. Body: `monto`, `descripcion?`, `participantes` (`[{ id }]`). Reparte en una transacción. |
+| POST | `/gastos/:id` | miembro | Crea un gasto en el grupo `:id`. Body: `monto` (mayor a cero, se redondea al centavo), `descripcion?` (hasta 255 caracteres), `participantes` (`[{ id }]`, al menos uno, sin repetidos y todos del grupo). Reparte en una transacción. |
 | DELETE | `/gastos/:id/:idGasto` | miembro (autor del gasto o admin) | Elimina el gasto y su reparto (soft delete, en una transacción). `:id` es el grupo. |
 | GET | `/gastos/grupos/:id/balance` | miembro | Liquidación del grupo: lista de `{ idA, idB, montoDeuda }`, donde `idA` le debe `montoDeuda` a `idB`. Es de solo lectura. |
 
@@ -242,14 +243,14 @@ Desde cualquier pantalla principal, la barra inferior lleva a Grupos (`/inicio`)
 | 401 | Sin cookie, token inválido o vencido, credenciales incorrectas. |
 | 403 | No pertenecés al grupo, o la acción es solo del administrador. |
 | 404 | Grupo, gasto o usuario inexistente (o ya eliminado). |
-| 409 | Email o usuario ya registrado, o la persona ya está en el grupo. |
+| 409 | Email o usuario ya registrado, la persona ya está en el grupo, o se intenta quitar a alguien con saldo pendiente. |
 | 500 | Error inesperado. |
 
 ## Decisiones de diseño
 
 **Reparto en centavos con resto exacto.** El monto se guarda como `DECIMAL(10,2)`, pero el reparto se calcula en centavos enteros: cada participante recibe la parte entera y los centavos que sobran se asignan de a uno. Así la suma de los detalles siempre da el monto del gasto. Descarté dividir con decimales y redondear, porque pierde o inventa centavos ($100 entre 3 daría $99,99).
 
-**Liquidación por saldo neto.** Para cada integrante se calcula `saldo = lo que pagó − lo que consumió`. Los deudores (saldo negativo) y los acreedores (positivo) se ordenan y se cruzan con dos punteros, uno por cada extremo: el que más debe le paga al que más puso. Con eso se generan, como máximo, tantos pagos como integrantes menos uno. Descarté liquidar gasto por gasto o de a pares, que obliga a que todos se paguen entre todos. El razonamiento completo está en [`splitear-back/docs/algoritmo.md`](splitear-back/docs/algoritmo.md).
+**Liquidación por saldo neto, en centavos.** Para cada integrante se calcula `saldo = lo que pagó − lo que consumió`, en centavos enteros para que los saldos sumen exactamente cero. Entra también cualquiera que haya pagado o consumido en el grupo aunque ya no sea integrante; por eso la API no deja quitar a alguien con saldo pendiente. Los deudores (saldo negativo) y los acreedores (positivo) se ordenan y se cruzan con dos punteros, uno por cada extremo: el que más debe le paga al que más puso. Con eso se generan, como máximo, tantos pagos como integrantes menos uno. Descarté liquidar gasto por gasto o de a pares, que obliga a que todos se paguen entre todos. El razonamiento completo está en [`splitear-back/docs/algoritmo.md`](splitear-back/docs/algoritmo.md).
 
 **Transacciones en operaciones compuestas.** Crear un gasto (gasto y detalles), crear un grupo (grupo e integrantes) y eliminar un gasto (detalles y gasto) se ejecutan en una transacción. Si falla un paso, no queda un gasto sin reparto ni un grupo a medio armar.
 
@@ -259,7 +260,7 @@ Desde cualquier pantalla principal, la barra inferior lleva a Grupos (`/inicio`)
 
 **Administrador sin tabla de roles.** El administrador de un grupo es su creador (`creadorId`). Alcanza para el alcance actual (agregar y quitar integrantes, eliminar el grupo). Una columna de rol en `PERTENENCIA` sería el paso siguiente si hiciera falta más de un administrador.
 
-**Manejo centralizado de errores.** `error.middleware.js` traduce los errores de Sequelize (unicidad a `409`, validación a `400`) y los errores con `statusCode` a respuestas JSON. Los controllers nuevos delegan con `next(error)`. Algunos controllers anteriores todavía responden por su cuenta (ver [Limitaciones](#limitaciones-conocidas)).
+**Manejo centralizado de errores.** `error.middleware.js` traduce los errores de Sequelize (unicidad a `409`, validación a `400`) y los errores con `statusCode` a respuestas JSON. Los controllers de auth y gastos delegan con `next(error)`; algunos de grupos y usuarios todavía arman su propio `500` (ver [Limitaciones](#limitaciones-conocidas)).
 
 **Migraciones en lugar de `sync`.** El esquema vive en `splitear-back/migrations` y se aplica con `sequelize-cli`. `sync({ alter: true })` es cómodo mientras el modelo cambia, pero en producción puede modificar columnas sin avisar. Al arrancar, el servidor solo verifica la conexión (`authenticate`).
 
@@ -346,25 +347,32 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
 ## Tests
 
-Todavía no hay tests automatizados: `npm test` es el placeholder de npm. Los casos con más valor para cubrir primero son los de la lógica de dinero:
+La lógica de dinero vive en funciones puras (`splitear-back/src/utils/dinero.js`), sin acceso a la base, y se prueba con el runner nativo de Node (`node:test`), sin dependencias extra:
 
-- Reparto: montos que no se dividen exacto entre los participantes (la suma de las cuotas debe dar el monto) y gastos con un solo participante.
-- Liquidación: saldos que suman cero, grupos sin gastos, integrantes que no participaron y ciclos de deudas.
+```bash
+cd splitear-back
+npm test
+```
+
+- Reparto: montos que no se dividen exacto (la suma de las cuotas da el monto), un solo participante y menos centavos que participantes.
+- Liquidación: el ejemplo de `docs/algoritmo.md`, grupos sin gastos, 200 casos aleatorios (como máximo n − 1 pagos y todos los saldos en cero) y saldos que no suman cero.
+- Validación del body de un gasto: montos, participantes y descripción inválidos.
+
+Todavía no hay tests de integración contra la base ni tests del front.
 
 ## Limitaciones conocidas
 
 Son decisiones de alcance que quedaron pendientes a propósito:
 
-- **Liquidación con números de punto flotante.** El reparto es exacto en centavos, pero los saldos se suman como `Number`. El front descarta restos menores a medio centavo. Lo correcto es liquidar también en centavos enteros.
-- **N+1 en algunas consultas.** `POST /gastos` y `POST /grupos` validan participantes de a uno, y `GET /grupos` hace dos consultas por grupo para calcular el saldo.
+- **N+1 en algunas consultas.** `POST /grupos` busca a los integrantes de a uno, y `GET /grupos` hace dos consultas por grupo para calcular el saldo.
 - **Invitaciones por mail sin implementar.** Cuando el email no tiene cuenta, la API responde que se envió una invitación, pero `enviarMail` está vacía.
 - **El balance es de solo lectura.** No se registran pagos, así que el saldo no baja cuando alguien paga.
-- **Formato de errores no unificado.** Conviven `message`, `mensaje` y `error`. Falta pasar los controllers anteriores al middleware central.
-- **Validación de entrada mínima en el back.** Reglas como "al menos un participante por gasto" hoy dependen del front.
+- **Errores 500 no centralizados del todo.** Todas las respuestas de error usan `message`, pero algunos controllers de grupos y usuarios todavía arman su propio `500` en lugar de delegar con `next(error)`.
+- **Validación de entrada parcial en el back.** Los gastos se validan por completo en la API; la creación de grupos y la edición del perfil todavía confían en el front.
 - **Sesión.** No hay protección anti-CSRF específica. El token dura 2 horas, sin renovación.
 - **Eliminar grupo, integrante o gasto** existe en la API pero no tiene pantalla.
 - **Actividad sin paginación:** muestra los últimos 30 gastos.
-- **Sin tests automatizados.**
+- **Tests solo de la lógica de dinero:** falta cubrir los endpoints contra una base y el front.
 - **Servicios gratuitos.** El back en Render se suspende tras 15 minutos sin uso y la primera carga tarda cerca de un minuto. El proyecto de Supabase se pausa tras una semana sin actividad.
 
 ## Roadmap
@@ -372,7 +380,7 @@ Son decisiones de alcance que quedaron pendientes a propósito:
 - Integración con Mercado Pago vía OAuth para pagar las deudas sugeridas.
 - Registrar pagos ("marcar como pagado") e incluirlos en la actividad.
 - Invitaciones reales por email.
-- Tests de reparto y liquidación.
+- Tests de integración de la API.
 - Integración continua con GitHub Actions (lint, tests y build).
 - Paginación de la actividad y pantallas para eliminar grupos, integrantes y gastos.
 - Tema oscuro.

@@ -33,7 +33,7 @@ const actualizarDatosPerfil = async (id, datosActualizados) => {
     const usuario = await User.findByPk(id);
     if (!usuario) {
         const error = new Error("Usuario no encontrado");
-        error.status = 404;
+        error.statusCode = 404;
         throw error;
     }
 

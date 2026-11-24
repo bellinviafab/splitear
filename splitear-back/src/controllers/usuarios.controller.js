@@ -8,7 +8,7 @@ const getUsuarios = async (req, res) => {  //Podría pensarse en una busqueda ef
         const listaUsuarios = await usuarioService.obtenerListaUsuarios(q, req.user.id)
         return res.status(200).json(listaUsuarios)
     } catch (error) {
-        return res.status(500).json({ error: "Ocurrió un error al buscar los usuarios" })
+        return res.status(500).json({ message: "Ocurrió un error al buscar los usuarios" })
     }
 
 }
@@ -21,7 +21,7 @@ const getUsuario = async (req, res) => {
         const usuario = await usuarioService.obtenerUsuario(id)
         return res.status(200).json(usuario)
     } catch (error) {
-        return res.status(500).json({ error: "Ocurrió un error al buscar al usuario" })
+        return res.status(500).json({ message: "Ocurrió un error al buscar al usuario" })
     }
 }
 
@@ -30,7 +30,7 @@ const actualizarDatosPerfil = async (req, res, next) => {
     try {
         const id = req.user.id;
         if (!id || id != req.user.id) {
-            return res.status(403).json({ error: "No tienes permiso para actualizar este perfil" });
+            return res.status(403).json({ message: "No tienes permiso para actualizar este perfil" });
         }
         const { name, last_name, alias } = req.body;
         if (!name && !last_name && !alias) {

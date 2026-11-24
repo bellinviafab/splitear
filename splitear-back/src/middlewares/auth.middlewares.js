@@ -26,11 +26,11 @@ const validaPertenencia = async (req, res, next) => {
         const pertenece = await authService.validarPertenencia(req.user.id, req.params.id)
 
         if (!pertenece)
-            return res.status(403).json({ mensaje: "No perteneces a este grupo" })
+            return res.status(403).json({ message: "No perteneces a este grupo" })
 
         next();
     } catch (error) {
-        return res.status(500).json({ error: "Error al validar la pertenencia al grupo" });
+        return res.status(500).json({ message: "Error al validar la pertenencia al grupo" });
     }
 }
 
@@ -38,10 +38,10 @@ const validaPermiso = async (req, res, next) => {
     try {
         const permisoAdmin = await grupoService.validarPermiso(req.user.id, req.params.id) //Valida que el usuario sea el admin
         if (!permisoAdmin)
-            return res.status(403).json({ mensaje: "No tienes permisos de administrador en este grupo" })
+            return res.status(403).json({ message: "No tienes permisos de administrador en este grupo" })
         next();
     } catch (error) {
-        return res.status(500).json({ error: "Error interno al verificar permisos" });
+        return res.status(500).json({ message: "Error interno al verificar permisos" });
     }
 }
 

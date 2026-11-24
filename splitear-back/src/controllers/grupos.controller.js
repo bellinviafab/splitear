@@ -78,34 +78,48 @@ const agregarMiembro = async (req, res, next) => {
             return res.status(200).json({ message: "El usuario no posee cuenta, se ha enviado un email de invitación" })
         }
 
-        if (await grupo.hasUser(newIntegrante))
+        // paranoid: false también trae la pertenencia de alguien que fue quitado del grupo.
+        // La clave primaria es (integranteId, grupoId) y la fila borrada sigue ocupándola, así que
+        // un addUser chocaría con la unicidad: en ese caso se restaura la fila existente.
+        const pertenencia = await Pertenencia.findOne({
+            where: { integranteId: newIntegrante.id, grupoId: grupo.id },
+            paranoid: false
+        })
+
+        if (pertenencia && !pertenencia.deletedAt)
             return res.status(409).json({ message: "Usuario ya forma parte del grupo" })
 
-        await grupo.addUser(newIntegrante);
+        if (pertenencia)
+            await pertenencia.restore();
+        else
+            await grupo.addUser(newIntegrante);
         return res.status(201).json({ message: "Usuario añadido con exito" })
     } catch (error) {
         next(error);
     }
 }
 
-const eliminarMiembro = async (req, res) => { //Soft delete
+const eliminarMiembro = async (req, res, next) => { //Soft delete
     try {
         const grupo = await Grupo.findOne({ where: { id: req.params.id, creadorId: req.user.id } })
         const miembroElim = Number(req.params.userId) //Express parsea params como string
         if (!grupo) //Grupo inexistente o usuario no tiene permisos por no ser el creador
-            return res.status(404).json({ mensaje: "Grupo no encontrado y/o Usuario no autorizado" })
+            return res.status(404).json({ message: "Grupo no encontrado y/o Usuario no autorizado" })
 
         if (miembroElim == req.user.id)
-            return res.status(400).json({ mensaje: "El administrador no puede eliminarse" })
+            return res.status(400).json({ message: "El administrador no puede eliminarse" })
 
         if (!(await grupo.hasUser(miembroElim)))
-            return res.status(400).json({ mensaje: "Usuario no pertenece al grupo" })
+            return res.status(400).json({ message: "Usuario no pertenece al grupo" })
+
+        // Quien se va con saldo pendiente dejaría deudas sin nadie que las pague o las cobre
+        if (await gastosService.obtenerSaldoUsuarioCentavos(grupo.id, miembroElim) !== 0)
+            return res.status(409).json({ message: "No se puede quitar a un integrante con saldo pendiente. Primero tienen que saldar sus cuentas" })
 
         await grupo.removeUser(miembroElim)
-        return res.status(200).json({ mensaje: "Miembro eliminado con exito" })
+        return res.status(200).json({ message: "Miembro eliminado con exito" })
     } catch (error) {
-        console.error(error)
-        return res.sendStatus(500)
+        next(error);
     }
 }
 
@@ -114,7 +128,7 @@ const getGrupos = async (req, res) => { //Grupos referidos a un usuario
         const listaGrupos = await grupoService.getGrupos(req.user.id)
         return res.status(200).json(listaGrupos)
     } catch (error) {
-        return res.status(500).json({ error: "Ocurrió un error al buscar al tus grupos" })
+        return res.status(500).json({ message: "Ocurrió un error al buscar al tus grupos" })
     }
 }
 
@@ -126,7 +140,7 @@ const detalleGrupo = async (req, res) => {
         }
         return res.status(200).json(detalleGrupo)
     } catch (error) {
-        return res.status(500).json({ error: "Ocurrió un error al mostrar el detalle del Grupo" })
+        return res.status(500).json({ message: "Ocurrió un error al mostrar el detalle del Grupo" })
     }
 }
 
@@ -136,7 +150,7 @@ const listadoGastosGrupo = async (req, res) => {
         return res.status(200).json(listado)
     } catch (error) {
         console.error(error)
-        return res.status(500).json({ error: "Ocurrió un error al obtener el listado de gastos" })
+        return res.status(500).json({ message: "Ocurrió un error al obtener el listado de gastos" })
     }
 }
 
